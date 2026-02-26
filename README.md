@@ -1,6 +1,24 @@
 # Sudoku Solver
 
-An automated pipeline that scrapes the daily Sudoku puzzle from the web, processes digit images for training data, and trains a Convolutional Neural Network (CNN) to recognise handwritten/printed digits (1–9) for use in a Sudoku solver.
+An end-to-end pipeline that scrapes the daily Sudoku puzzle from [sudoku.com](https://sudoku.com/challenges/daily-sudoku), reads the board using a CNN digit classifier, and solves it with an animated backtracking algorithm.
+
+---
+
+## Pipeline Overview
+
+```
+webScraper.py          dataCleaning.py + modelTraining.py
+(scrape puzzle PNG)    (train CNN digit classifier)
+        |                          |
+        |                   models/model.keras
+        |                          |
+        +---------> sudokuExtractor.py (read 9x9 board from image)
+                            |
+                    sudokuSolver.py / sudokuVisualiser.py
+                    (solve + animate backtracking)
+```
+
+The `dailyRunner.py` script runs all steps automatically in sequence.
 
 ---
 
@@ -8,111 +26,155 @@ An automated pipeline that scrapes the daily Sudoku puzzle from the web, process
 
 ```
 SudokuSolver/
-├── webScraper.py       # Captures the daily Sudoku puzzle as a PNG screenshot
-├── dataCleaning.py     # Loads and preprocesses digit training images
-├── modelTraining.py    # Builds, trains, and saves the CNN digit classifier
-├── DigitData/          # Training images organised by digit (Sample001–Sample009)
-├── DailySudokuChallenges/  # Output folder for scraped puzzle screenshots
-└── models/             # Output folder for saved trained models
+├── dailyRunner.py          # End-to-end pipeline entry point
+├── webScraper.py           # Scrapes the daily puzzle as a PNG screenshot
+├── sudokuExtractor.py      # CNN-based board reader (image → 9×9 grid)
+├── sudokuSolver.py         # Backtracking solver (no visualisation)
+├── sudokuVisualiser.py     # Backtracking solver with live animation
+├── dataCleaning.py         # Preprocesses digit training images
+├── modelTraining.py        # Builds, trains, and saves the CNN
+├── DigitData/              # Training images organised by digit (Sample002–010)
+├── DailySudokuChallenges/  # Scraped puzzle screenshots (auto-created)
+└── models/                 # Saved trained models (auto-created)
 ```
+
+---
+
+## Quick Start
+
+**1. Install dependencies**
+```bash
+pip install tensorflow opencv-python scikit-learn selenium webdriver-manager Pillow pytz numpy matplotlib
+```
+
+**2. Train the digit classifier** (one-time setup)
+```bash
+python modelTraining.py
+```
+
+**3. Run the daily pipeline**
+```bash
+python dailyRunner.py
+```
+
+This will scrape today's puzzle, extract the board, and open an animated solver window.
 
 ---
 
 ## Files
 
-### `webScraper.py`
-Scrapes the daily Sudoku challenge from [sudoku.com](https://sudoku.com/challenges/daily-sudoku) and saves it as a PNG image.
+### `dailyRunner.py` — Main pipeline
+Runs all three steps in sequence: scrape → extract → solve & visualise.
+
+```bash
+python dailyRunner.py [--speed slow|medium|fast|instant] [--model PATH] [--skip-scrape]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--speed` | `fast` | Visualisation speed |
+| `--model` | `models/model.keras` | Path to trained model |
+| `--skip-scrape` | off | Skip scraping; use most recent saved image |
+
+---
+
+### `webScraper.py` — Puzzle scraper
+Scrapes today's puzzle from sudoku.com and saves it as a PNG.
 
 **How it works:**
-1. Launches a headless Chrome browser using Selenium and ChromeDriverManager.
+1. Launches a headless Chrome browser via Selenium.
 2. Navigates to the daily Sudoku challenge page.
-3. Executes JavaScript to extract the puzzle's `<canvas>` element as a base64-encoded PNG.
-4. Decodes the image and saves it to `DailySudokuChallenges/sudoku_YYYY-MM-DD.png`, where the date is based on the **Australia/Sydney** timezone.
+3. Extracts the puzzle `<canvas>` as a base64-encoded PNG.
+4. Saves to `DailySudokuChallenges/sudoku_YYYY-MM-DD.png` (Sydney timezone).
 
 **Dependencies:** `selenium`, `webdriver-manager`, `Pillow`, `pytz`
 
 ---
 
-### `dataCleaning.py`
-Loads and preprocesses the digit training images stored in `DigitData/` ready for model training.
+### `sudokuExtractor.py` — Board reader
+Uses the trained CNN to convert a puzzle image into a 9×9 grid of integers.
 
 **How it works:**
-1. Scans all `Sample00X/` folders inside `DigitData/` — each folder corresponds to a digit (1–9).
-2. Reads every PNG image using OpenCV.
-3. Converts each image to **greyscale** and resizes it to **28×28 pixels** (the standard input size for digit classifiers).
-4. **Inverts** the images so digit strokes are white on a black background (consistent with training conventions).
-5. **Normalises** pixel values to the `[0, 1]` range.
-6. Converts labels to **one-hot encoding** across 9 classes (digits 1–9; 0 is excluded as it is not a valid Sudoku entry).
-7. Splits data into **train (≈72%) / validation (≈13%) / test (15%)** sets with shuffling.
+1. Detects the Sudoku grid using adaptive thresholding and contour detection.
+2. Divides the grid into 81 individual cell images.
+3. Classifies each cell as empty or a digit (1–9) using the CNN.
+4. Returns a 9×9 list where `0` represents an empty cell.
+
+```bash
+python sudokuExtractor.py [--image PATH] [--model PATH]
+```
+
+**Dependencies:** `opencv-python`, `tensorflow`, `numpy`
+
+---
+
+### `sudokuSolver.py` — Backtracking solver
+Solves a board extracted from an image and prints the result to the terminal.
+
+**How it works:**
+- Recursive backtracking: tries digits 1–9 in each empty cell, backtracks on contradictions.
+- Solved cells are marked with `[x]` in the printed output to distinguish them from given clues.
+
+```bash
+python sudokuSolver.py [--image PATH] [--model PATH]
+```
+
+---
+
+### `sudokuVisualiser.py` — Animated solver
+Same backtracking algorithm as `sudokuSolver.py`, with a live matplotlib animation showing each placement (green) and backtrack (red) in real time.
+
+```bash
+python sudokuVisualiser.py [--image PATH] [--model PATH] [--speed slow|medium|fast|instant]
+```
+
+**Dependencies:** `matplotlib`
+
+---
+
+### `dataCleaning.py` — Training data preprocessor
+Loads and preprocesses digit images from `DigitData/` for model training.
+
+**How it works:**
+1. Scans `Sample00X/` folders — each folder corresponds to a digit (1–9).
+2. Converts images to **greyscale**, resizes to **28×28 px**, inverts (white digit on black), and normalises to `[0, 1]`.
+3. Encodes labels as **one-hot vectors** across 9 classes.
+4. Splits into **train / validation / test** sets (~72% / 13% / 15%).
 
 **Dependencies:** `opencv-python`, `numpy`, `tensorflow`, `scikit-learn`
 
 ---
 
-### `modelTraining.py`
-Defines, trains, and saves a CNN model to classify Sudoku digits (1–9).
+### `modelTraining.py` — CNN trainer
+Builds and trains the digit classifier.
 
-**Model architecture (CNN):**
+**Model architecture:**
+
 | Layer | Details |
 |---|---|
-| Input | 28×28×1 greyscale image |
-| Conv2D | 32 filters, 3×3 kernel, ReLU |
+| Input | 28×28×1 greyscale |
+| Conv2D | 32 filters, 3×3, ReLU |
 | MaxPooling2D | 2×2 |
-| Conv2D | 64 filters, 3×3 kernel, ReLU |
+| Conv2D | 64 filters, 3×3, ReLU |
 | MaxPooling2D | 2×2 |
 | Flatten | — |
-| Dropout | 50% (reduces overfitting) |
-| Dense (output) | 9 units, Softmax (one per digit 1–9) |
+| Dropout | 50% |
+| Dense (output) | 9 units, Softmax |
 
-**Training:**
-- Loss: Categorical cross-entropy
-- Optimiser: Adam
-- Default: 10 epochs, batch size 128
+- Loss: categorical cross-entropy | Optimiser: Adam
+- Saves to `models/model.keras` (timestamped if a file already exists)
 
-**How it works:**
-1. Calls `dataCleaning.py` to load and preprocess the training data.
-2. Builds and compiles the CNN.
-3. Trains on the training set, evaluating against the validation set each epoch.
-4. Saves the trained model to `models/model.keras`. If a model already exists at that path, it appends a timestamp to avoid overwriting (e.g. `model_26_02_2026_14_30_00.keras`).
-
-**Command-line usage:**
 ```bash
-python modelTraining.py --epochs 20 --batch_size 64 --model_save_fpath models/my_model.keras
+python modelTraining.py [--epochs 20] [--batch_size 64] [--model_save_fpath models/my_model.keras]
 ```
 
 **Dependencies:** `tensorflow`, `numpy`
 
 ---
 
-## Pipeline Overview
-
-```
-DigitData/              webScraper.py
-(training images)       (daily puzzle PNG)
-       |                       |
-dataCleaning.py                |
-(preprocess & split)           |
-       |                       |
-modelTraining.py               |
-(train CNN)                    |
-       |                       |
-models/model.keras   <-->  [future: puzzle solver]
-```
-
----
-
-## Requirements
-
-Install all dependencies with:
-
-```bash
-pip install tensorflow opencv-python scikit-learn selenium webdriver-manager Pillow pytz numpy
-```
-
----
-
 ## Notes
 
-- The `DigitData/` folder must contain subdirectories `Sample001` through `Sample009`, each holding PNG images of digits 1–9 respectively.
-- The `DailySudokuChallenges/` folder must exist before running `webScraper.py`.
-- Chrome must be installed on the system for the web scraper to work.
+- Chrome must be installed for the web scraper to work.
+- The `DigitData/` folder must contain `Sample002` through `Sample010`, each holding PNG images of digits 1–9 respectively.
+- The scraper and pipeline use **Australia/Sydney** timezone to determine today's date.
+- The web scraper is intended for personal/educational use. Please respect sudoku.com's terms of service.

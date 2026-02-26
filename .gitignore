@@ -1,0 +1,7 @@
+__pycache__/
+DailySudokuChallenges/
+DigitData/
+debug_output/
+models/
+*.keras
+*.png

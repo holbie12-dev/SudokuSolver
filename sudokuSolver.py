@@ -12,58 +12,75 @@ class SudokuSolver:
     # Validation helpers
     # ------------------------------------------------------------------
 
-    def _is_valid(self, row, col, num):
-        """Return True if placing num at (row, col) breaks no Sudoku rule."""
-        # Row check
-        if num in self.board[row]:
-            return False
-
-        # Column check
-        if num in (self.board[r][col] for r in range(9)):
-            return False
-
-        # 3x3 box check
-        box_row = (row // 3) * 3
-        box_col = (col // 3) * 3
+    def _candidates(self, row, col):
+        """Return the set of valid digits for the empty cell at (row, col)."""
+        used = set(self.board[row])
+        used.update(self.board[r][col] for r in range(9))
+        box_row, box_col = (row // 3) * 3, (col // 3) * 3
         for r in range(box_row, box_row + 3):
             for c in range(box_col, box_col + 3):
-                if self.board[r][c] == num:
-                    return False
+                used.add(self.board[r][c])
+        return set(range(1, 10)) - used
 
-        return True
+    def _find_mrv_cell(self):
+        """Return (row, col, candidates) for the empty cell with the fewest
+        valid candidates (Minimum Remaining Values heuristic), or None if the
+        board is full.  Returns immediately if a cell with only one candidate
+        is found, or signals a dead-end if a cell has zero candidates.
+        """
+        best_pos = None
+        best_candidates = None
+        best_count = 10  # More than the maximum possible (9)
 
-    def _find_empty(self):
-        """Return (row, col) of the next empty cell, or None if the board is full."""
         for r in range(9):
             for c in range(9):
-                if self.board[r][c] == 0:
-                    return r, c
-        return None
+                if self.board[r][c] != 0:
+                    continue
+                cands = self._candidates(r, c)
+                count = len(cands)
+                if count == 0:
+                    return r, c, cands  # Dead-end: no valid digit exists
+                if count < best_count:
+                    best_count = count
+                    best_pos = (r, c)
+                    best_candidates = cands
+                    if count == 1:
+                        break  # Cannot do better — skip the rest of the search
+            if best_count == 1:
+                break
+
+        if best_pos is None:
+            return None  # Board is complete
+        r, c = best_pos
+        return r, c, best_candidates
 
     # ------------------------------------------------------------------
     # Backtracking solver
     # ------------------------------------------------------------------
 
     def solve(self):
-        """Solve the board in-place using recursive backtracking.
+        """Solve the board in-place using backtracking with the MRV heuristic.
 
-        Returns True if a solution was found, False if the puzzle is unsolvable.
+        Picks the empty cell with fewest valid candidates at each step, which
+        minimises branching and reduces total backtracks.  Returns True if a
+        solution was found, False if the puzzle is unsolvable.
         """
-        empty = self._find_empty()
-        if empty is None:
+        result = self._find_mrv_cell()
+        if result is None:
             return True  # No empty cells — board is complete
 
-        row, col = empty
+        row, col, candidates = result
+        if not candidates:
+            return False  # Dead-end: no valid digit for this cell
 
-        for num in range(1, 10):
-            if self._is_valid(row, col, num):
-                self.board[row][col] = num
+        for num in candidates:
+            self.board[row][col] = num
 
-                if self.solve():
-                    return True
+            if self.solve():
+                return True
 
-                # Backtrack
-                self.board[row][col] = 0
+            # Backtrack
+            self.board[row][col] = 0
 
         return False  # Trigger backtrack in caller
 

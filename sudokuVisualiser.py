@@ -125,46 +125,67 @@ class SudokuVisualiser:
     # Backtracking solver (with visualisation hooks)
     # ------------------------------------------------------------------
 
-    def _is_valid(self, row, col, num):
-        if num in self.board[row]:
-            return False
-        if any(self.board[r][col] == num for r in range(9)):
-            return False
-        br, bc = (row // 3) * 3, (col // 3) * 3
-        for r in range(br, br + 3):
-            for c in range(bc, bc + 3):
-                if self.board[r][c] == num:
-                    return False
-        return True
+    def _candidates(self, row, col):
+        """Return the set of valid digits for the empty cell at (row, col)."""
+        used = set(self.board[row])
+        used.update(self.board[r][col] for r in range(9))
+        box_row, box_col = (row // 3) * 3, (col // 3) * 3
+        for r in range(box_row, box_row + 3):
+            for c in range(box_col, box_col + 3):
+                used.add(self.board[r][c])
+        return set(range(1, 10)) - used
 
-    def _find_empty(self):
+    def _find_mrv_cell(self):
+        """Return (row, col, candidates) for the empty cell with the fewest
+        valid candidates (MRV heuristic), or None if the board is full."""
+        best_pos = None
+        best_candidates = None
+        best_count = 10
+
         for r in range(9):
             for c in range(9):
-                if self.board[r][c] == 0:
-                    return r, c
-        return None
+                if self.board[r][c] != 0:
+                    continue
+                cands = self._candidates(r, c)
+                count = len(cands)
+                if count == 0:
+                    return r, c, cands  # Dead-end
+                if count < best_count:
+                    best_count = count
+                    best_pos = (r, c)
+                    best_candidates = cands
+                    if count == 1:
+                        break
+            if best_count == 1:
+                break
+
+        if best_pos is None:
+            return None  # Board complete
+        r, c = best_pos
+        return r, c, best_candidates
 
     def _solve(self):
-        empty = self._find_empty()
-        if empty is None:
-            return True
+        result = self._find_mrv_cell()
+        if result is None:
+            return True  # No empty cells — solved
 
-        row, col = empty
+        row, col, candidates = result
+        if not candidates:
+            return False  # Dead-end
 
-        for num in range(1, 10):
-            if self._is_valid(row, col, num):
-                self.board[row][col] = num
-                self.steps += 1
-                self._set_title(f'Steps: {self.steps:,}')
-                self._update_cell(row, col, num, state='try')
+        for num in candidates:
+            self.board[row][col] = num
+            self.steps += 1
+            self._set_title(f'Steps: {self.steps:,}')
+            self._update_cell(row, col, num, state='try')
 
-                if self._solve():
-                    return True
+            if self._solve():
+                return True
 
-                # Wrong — backtrack
-                self._update_cell(row, col, num, state='backtrack')
-                self.board[row][col] = 0
-                self._update_cell(row, col, 0, state='normal')
+            # Wrong — backtrack
+            self._update_cell(row, col, num, state='backtrack')
+            self.board[row][col] = 0
+            self._update_cell(row, col, 0, state='normal')
 
         return False
 

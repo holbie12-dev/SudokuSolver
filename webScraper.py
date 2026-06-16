@@ -1,12 +1,21 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 from PIL import Image
 import base64
+import glob
 import io
-import os 
+import os
 import datetime
 import pytz
+
+# Selenium Manager and webdriver-manager both phone home to
+# googlechromelabs.github.io to resolve the driver version, which fails when
+# offline or behind restrictive DNS. Reuse a chromedriver already cached by
+# webdriver-manager (~/.wdm) instead of looking one up over the network.
+def _cached_chromedriver_path():
+    cache_glob = os.path.join(os.path.expanduser('~'), '.wdm', 'drivers', 'chromedriver', '**', 'chromedriver.exe')
+    matches = glob.glob(cache_glob, recursive=True)
+    return max(matches, key=os.path.getmtime) if matches else None
 
 class SudokuScraper:
     def __init__(self):
@@ -14,7 +23,9 @@ class SudokuScraper:
 
     def get_canvas_image(self):
         # Set up the Selenium WebDriver
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+        driver_path = _cached_chromedriver_path()
+        service = Service(executable_path=driver_path) if driver_path else Service()
+        driver = webdriver.Chrome(service=service)
         
         # Open the page with the canvas element
         driver.get(self.url)

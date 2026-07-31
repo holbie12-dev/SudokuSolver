@@ -1,5 +1,6 @@
 from tensorflow import keras
 from tensorflow.keras import layers
+import json
 import os
 from datetime import datetime
 import argparse
@@ -15,9 +16,13 @@ class DigitClassifier:
         self.model = None
 
     def buildModel(self):
-        """Define and compile the CNN model."""
+        """Define and compile the CNN model with training-time augmentation."""
         self.model = keras.Sequential([
             keras.Input(shape=(28, 28, 1)),
+            # Augmentation layers — active only during training
+            layers.RandomRotation(0.1),
+            layers.RandomZoom(0.1),
+            layers.RandomContrast(0.2),
             layers.Conv2D(32, kernel_size=(3, 3), activation="relu"),
             layers.MaxPooling2D(pool_size=(2, 2)),
             layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
@@ -44,6 +49,26 @@ class DigitClassifier:
                        epochs=self.epochs)
         print("Training complete")
     
+    def evaluateModel(self, x_test, y_test):
+        """Evaluate on hold-out test set and save metrics to results/."""
+        loss, accuracy = self.model.evaluate(x_test, y_test, verbose=0)
+        print(f"Test loss:     {loss:.4f}")
+        print(f"Test accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)")
+
+        os.makedirs("results", exist_ok=True)
+        results = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "test_loss": round(float(loss), 6),
+            "test_accuracy": round(float(accuracy), 6),
+            "epochs": self.epochs,
+            "batch_size": self.batch_size,
+        }
+        path = os.path.join("results", "training_results.json")
+        with open(path, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"Results saved to {path}")
+        return loss, accuracy
+
     def saveModel(self):
         """Save the trained model to a file."""
         os.makedirs(os.path.dirname(self.model_save_fpath), exist_ok=True)  # Ensure directory exists
@@ -67,6 +92,9 @@ class DigitClassifier:
 
         # Train the model
         self.trainModel(x_train, y_train, x_val, y_val)
+
+        # Evaluate on test set and save results
+        self.evaluateModel(x_test, y_test)
 
         # Save the model
         self.saveModel()
